@@ -1,0 +1,38 @@
+# --- Reflex ---
+.web/
+*.db
+.states/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Entornos virtuales ---
+venv/
+.venv/
+env/
+ENV/
+
+# --- Variables de entorno / secretos ---
+.env
+.env.*
+!.env.example
+
+# --- Editores / IDE ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Sistema operativo ---
+.DS_Store
+Thumbs.db
+
+# --- Documentos internos de planificación ---
+rework.md
+DATABASE_SCHEMA.md
