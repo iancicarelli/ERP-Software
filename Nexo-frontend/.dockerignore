@@ -1,0 +1,24 @@
+# Entornos virtuales del host: son de otra plataforma y pesan cientos de MB.
+venv
+.venv
+env
+ENV
+
+# Artefactos de Reflex: se regeneran con `reflex init` dentro de la imagen.
+.web
+.states
+*.db
+
+__pycache__
+**/__pycache__
+*.py[cod]
+
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+*.md
+.vscode
+.idea

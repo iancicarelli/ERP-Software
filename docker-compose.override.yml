@@ -1,0 +1,49 @@
+# ============================================================================
+# Overrides de DESARROLLO. Compose lo aplica automáticamente encima de
+# docker-compose.yml — no hace falta pasarlo con -f.
+#
+# Agrega: puertos publicados hacia el host, bind mounts para hot-reload y
+# comandos en modo dev.
+# ============================================================================
+
+services:
+  db:
+    # Solo en desarrollo: permite conectarse con psql/DBeaver desde el host.
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+
+  backend:
+    build:
+      # La etapa `runtime` solo trae dependencias de producción y dist/.
+      # Para hot-reload hace falta la etapa `dev`, que conserva las devDeps
+      # (tsx / nest-cli) y el código fuente.
+      target: dev
+    environment:
+      NODE_ENV: development
+    ports:
+      - "${BACKEND_PORT:-3001}:${BACKEND_PORT:-3001}"
+    volumes:
+      # Solo el código fuente, para hot-reload. Deliberadamente NO se monta
+      # /app entero ni un volumen anónimo sobre /app/node_modules: como nada
+      # del host tapa ese directorio, el volumen anónimo sería inútil y además
+      # quedaría cacheado entre builds, sirviendo un node_modules viejo.
+      - ./Nexo-backend/src:/app/src
+      - ./Nexo-backend/prisma:/app/prisma
+      # La configuración del compilador también, en solo lectura: sin esto,
+      # editar el tsconfig en el host no tiene ningún efecto adentro y el
+      # contenedor sigue compilando con la copia que quedó en la imagen —
+      # un buen rato de desconcierto garantizado.
+      - ./Nexo-backend/tsconfig.json:/app/tsconfig.json:ro
+      - ./Nexo-backend/tsconfig.build.json:/app/tsconfig.build.json:ro
+      - ./Nexo-backend/nest-cli.json:/app/nest-cli.json:ro
+    command: ["npm", "run", "start:dev"]
+
+  frontend:
+    volumes:
+      # Solo el código de la app. NO montar todo ./Nexo-frontend: taparía el
+      # .web/ construido en la imagen y arrastraría el venv/ del host (que es
+      # de otra plataforma y pesa cientos de MB).
+      - ./Nexo-frontend/Nexo:/app/Nexo
+      - ./Nexo-frontend/rxconfig.py:/app/rxconfig.py
+      - ./Nexo-frontend/assets:/app/assets
+    command: ["reflex", "run", "--env", "dev", "--backend-host", "0.0.0.0"]

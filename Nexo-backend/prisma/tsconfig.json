@@ -1,0 +1,9 @@
+{
+  // El tsconfig raíz tiene `rootDir: ./src`, así que no cubre `seed.ts`.
+  // ts-node lo usa vía `prisma.seed` en package.json.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".."
+  },
+  "include": ["**/*.ts", "../src/auth/password.ts"]
+}

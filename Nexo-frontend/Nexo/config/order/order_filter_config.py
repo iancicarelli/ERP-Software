@@ -72,23 +72,27 @@ ORDER_FILTER_CONFIG = {
             "options": ESTADO,
         },
         ### Ubi (DROPDOWNS)
+        # options_source unificado (D3 del ROADMAP): antes estos tres leían
+        # "sector_ordenes" / "zona_ordenes", que salían de /sectores-ordenes/ y
+        # /zonas-ordenes/. Esas rutas no existen en el backend: hay UNA tabla de
+        # zonas y UNA de sectores para los cuatro módulos.
         "sector_sector": {
             "label": "Sector",
             "type": "list",
             "group": "Ubicación",
-            "options_source": "sector_ordenes",
+            "options_source": "sector",
         },
         "zona_zona": {
             "label": "Zona",
             "type": "list",
             "group": "Ubicación",
-            "options_source": "zona_ordenes",
+            "options_source": "zona",
         },
         "zona_exclude": {
             "label": "Excluir Zona",
             "type": "list",
             "group": "Ubicación",
-            "options_source": "zona_ordenes",
+            "options_source": "zona",
         },
 
         ######### DROPDOWNS BOOLEAN 

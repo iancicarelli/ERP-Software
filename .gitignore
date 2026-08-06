@@ -12,6 +12,14 @@ __pycache__/
 build/
 dist/
 
+# --- Node / NestJS ---
+node_modules/
+*.tsbuildinfo
+npm-debug.log*
+# El cliente de Prisma es código generado: se regenera con `prisma generate`.
+# Las MIGRACIONES (prisma/migrations/) sí se versionan.
+Nexo-backend/generated/
+
 # --- Entornos virtuales ---
 venv/
 .venv/
@@ -36,3 +44,4 @@ Thumbs.db
 # --- Documentos internos de planificación ---
 rework.md
 DATABASE_SCHEMA.md
+ROADMAP.md

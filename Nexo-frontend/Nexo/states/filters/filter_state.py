@@ -10,9 +10,13 @@ class FilterState(APIState):
     """Carga dinámica de opciones de filtro (sector / zona) desde la API.
 
     Reemplaza las listas estáticas que vivían en ``config/utils/sector_config.py``
-    y ``config/utils/zona_config.py``. Dualidad de endpoints:
-      - Clientes / Pagos / Transferencias → ``/sectores/`` , ``/zonas/``
-      - Órdenes                           → ``/sectores-ordenes/`` , ``/zonas-ordenes/``
+    y ``config/utils/zona_config.py``.
+
+    **Un solo par de endpoints** (``/sectores/`` y ``/zonas/``) para los cuatro
+    módulos: clientes, pagos, transferencias y órdenes. Antes había una segunda
+    pareja ``/sectores-ordenes/`` y ``/zonas-ordenes/`` solo para órdenes; el
+    backend unificó ambas tablas (D3 del ROADMAP) y esas rutas no existen, así
+    que ``load_all()`` pasó de 4 llamadas a 2.
 
     Las opciones se exponen como state vars (para reactividad / inspección) y
     además se espejan en un ``ClassVar`` (``_options_cache``) para que
@@ -23,10 +27,9 @@ class FilterState(APIState):
     poblado por ``load_all()`` en el ``on_load`` de la página.
     """
 
-    sector_options: list[str] = []          # Clientes, Pagos, Transferencias
-    zona_options: list[str] = []            # Clientes, Pagos, Transferencias
-    sector_ordenes_options: list[str] = []  # solo Órdenes
-    zona_ordenes_options: list[str] = []    # solo Órdenes
+    # Los cuatro módulos leen estas dos listas (D3).
+    sector_options: list[str] = []
+    zona_options: list[str] = []
 
     # Caché compartida (TTL 30 min). Timestamp por clave, escrito SOLO tras una
     # carga exitosa, nunca antes.
@@ -120,16 +123,6 @@ class FilterState(APIState):
     async def load_zonas(self):
         self.zona_options = await self._fetch_options("zona", "/zonas/", "zona")
 
-    async def load_sectores_ordenes(self):
-        self.sector_ordenes_options = await self._fetch_options(
-            "sector_ordenes", "/sectores-ordenes/", "sector"
-        )
-
-    async def load_zonas_ordenes(self):
-        self.zona_ordenes_options = await self._fetch_options(
-            "zona_ordenes", "/zonas-ordenes/", "zona"
-        )
-
     async def load_all(self):
         # Guard de token: en el on_load de la página este handler corre después
         # de AuthState.verify_token (los eventos de on_load se procesan en orden,
@@ -141,6 +134,4 @@ class FilterState(APIState):
         await asyncio.gather(
             self.load_sectores(),
             self.load_zonas(),
-            self.load_sectores_ordenes(),
-            self.load_zonas_ordenes(),
         )

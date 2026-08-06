@@ -12,8 +12,13 @@ from ...config.settings import API_BASE_URL
 # Con True, `verify_token` NO redirige a /login: todas las páginas cargan
 # directamente (reflex run abre el index). Poné False para restaurar el flujo
 # real de autenticación. NO subir a producción con True.
+#
+# Apagado en la Fase 3 del ROADMAP: el backend ya expone /api/token/,
+# /token/refresh/ y /token/verify/ con el contrato de §3.3, y todas las demás
+# rutas exigen `Authorization: Bearer`. Para entrar, sembrar el admin con
+# `docker compose exec backend npm run prisma:seed`.
 # ============================================================================
-AUTH_BYPASS = True
+AUTH_BYPASS = False
 
 
 class AuthState(rx.State):

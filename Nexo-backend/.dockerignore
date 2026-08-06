@@ -1,0 +1,17 @@
+node_modules
+dist
+# Caché de compilación incremental de tsc. Si entra a la imagen, tsc cree que
+# dist/ ya está al día, no emite nada y `nest start` muere con
+# "Cannot find module /app/dist/main".
+*.tsbuildinfo
+npm-debug.log*
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+*.md
+test
+coverage
+.vscode
+.idea

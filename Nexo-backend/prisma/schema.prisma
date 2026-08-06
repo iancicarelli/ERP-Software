@@ -1,0 +1,533 @@
+// ============================================================================
+// Nexo ERP — esquema de base de datos
+// ----------------------------------------------------------------------------
+// Traducido desde `Nexo-backend/DATABASE_SCHEMA.md` (borrador inferido de los
+// DTOs del frontend) con los ajustes acordados en `ROADMAP.md` §2 y §5/Fase 1.
+//
+// Convenciones (ROADMAP §2/D2):
+//   - Los NOMBRES DE CAMPO son los que consume el frontend, en snake_case.
+//     No hay capa de transformación camelCase↔snake_case: lo que se ve acá es
+//     lo que viaja por la API.
+//   - Los modelos van en PascalCase singular (Prisma Client → `prisma.cliente`)
+//     con `@@map` a la tabla real en plural snake_case.
+//   - Montos en `Int` — CLP no tiene centavos (D5).
+//   - PK `Int` autoincremental (ver "Desvíos" más abajo).
+//
+// Desvíos respecto de DATABASE_SCHEMA.md, todos justificados por el contrato
+// que el frontend ya implementa:
+//
+//   1. PK `Int` (SERIAL) en vez de `BigInt` (BIGSERIAL). Prisma mapea BigInt a
+//      `bigint` de JS, que `JSON.stringify` no serializa: obligaría a un
+//      serializer especial en cada respuesta. Los DTOs del frontend declaran
+//      `id: int`. 2.1e9 filas es techo de sobra para este dominio.
+//   2. Nombres de columna de los catálogos: `zonas.zona`, `sectores.sector`,
+//      `estados_orden.estado`, `causas_orden.causa`, `causas_baja.causa`,
+//      `elementos.elemento` — no `nombre`. Los dropdowns leen exactamente esas
+//      claves (`states/relations/*_dropdown_state.py`).
+//   3. `tecnicos` y `vendedores` tienen `nombre1/apellido1/apellido2`, no un
+//      único `nombre`: así los arma el frontend y así los filtra
+//      (`vendedor_nombre1`, `tecnico_apellido1`).
+//   4. Se agrega el catálogo `servicios_orden`. `OrdersAddState` puebla el
+//      combo de servicio desde `/servicios-ordenes/`, que devuelve `{id,
+//      servicio}`, y manda ese id en `servicio`. Es un catálogo, NO la tabla
+//      `servicios` (los servicios contratados por un cliente, que no tienen
+//      columna de nombre). Por eso `OrdenTrabajo.servicio_id` apunta acá y no
+//      a `servicios`. ROADMAP §3.7 lo marca como candidato a colapsar con
+//      `/servicios/`: si eso se decide, se resuelve con una migración.
+//   5. D3 — zonas y sectores unificados: `sectores.zona_id` NOT NULL,
+//      `sectores.sector` UNIQUE global, borrado de zona con sectores RESTRICT.
+//   6. D4 — `clientes` NO tiene `sector_id`. `sector`/`zona` del
+//      `ClientDetailDTO` son derivados de solo lectura de la dirección
+//      principal. Validar contra negocio en la Fase 5 (pregunta abierta §8.3).
+//   7. `ordenes_trabajo` suma `fecha_ingreso` (el dashboard filtra por ella),
+//      `direccion` como texto libre (el PUT manda un string) y `tecnico2`
+//      como texto (idem — no es FK, ver `OrderDetailDTO.tecnico2: str`).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Usuarios / autenticación ────────────────────────────────────────────────
+// La Fase 3 monta el JWT sobre esta tabla. `password` guarda el hash argon2.
+
+model Usuario {
+  id          Int      @id @default(autoincrement())
+  username    String   @unique @db.VarChar(150)
+  password    String   @db.VarChar(255)
+  email       String?  @db.VarChar(254)
+  is_active   Boolean  @default(true)
+  is_staff    Boolean  @default(false)
+  date_joined DateTime @default(now()) @db.Timestamptz(6)
+
+  notas_agregadas NotaOrden[] @relation("NotaAddedBy")
+  vendedor        Vendedor?
+  tecnico         Tecnico?
+
+  @@map("usuarios")
+}
+
+// ── Geografía: zonas y sectores (D3) ────────────────────────────────────────
+
+model Zona {
+  id   Int    @id @default(autoincrement())
+  zona String @unique @db.VarChar(120)
+
+  sectores Sector[]
+  ordenes  OrdenTrabajo[]
+
+  @@map("zonas")
+}
+
+model Sector {
+  // UNIQUE global, no UNIQUE(sector, zona_id): los filtros del frontend mandan
+  // el sector como STRING de nombre (`?sector=Centro`, `?sector_sector=Centro`).
+  // Un nombre repetido entre zonas haría el filtro ambiguo. (ROADMAP D3)
+  sector String @unique @db.VarChar(120)
+
+  id      Int @id @default(autoincrement())
+  zona_id Int
+
+  zona Zona @relation(fields: [zona_id], references: [id], onDelete: Restrict)
+
+  direcciones Direccion[]
+  ordenes     OrdenTrabajo[]
+
+  @@index([zona_id])
+  @@map("sectores")
+}
+
+// ── Catálogos ───────────────────────────────────────────────────────────────
+
+/// Planes / productos instalables (TV, internet, anexos…).
+model Elemento {
+  id         Int     @id @default(autoincrement())
+  elemento   String  @db.VarChar(160)
+  monto_base Int     @default(0)
+  activo     Boolean @default(true)
+
+  servicios Servicio[]
+
+  @@map("elementos")
+}
+
+/// Catálogo del combo "servicio" del formulario de orden (`/servicios-ordenes/`).
+model ServicioOrden {
+  id       Int    @id @default(autoincrement())
+  servicio String @unique @db.VarChar(160)
+
+  ordenes OrdenTrabajo[]
+
+  @@map("servicios_orden")
+}
+
+model EstadoOrden {
+  id     Int    @id @default(autoincrement())
+  estado String @unique @db.VarChar(120)
+
+  ordenes OrdenTrabajo[]
+
+  @@map("estados_orden")
+}
+
+model CausaOrden {
+  id    Int    @id @default(autoincrement())
+  causa String @unique @db.VarChar(160)
+
+  ordenes OrdenTrabajo[]
+
+  @@map("causas_orden")
+}
+
+model CausaBaja {
+  id    Int    @id @default(autoincrement())
+  causa String @unique @db.VarChar(160)
+
+  clientes Cliente[]
+
+  @@map("causas_baja")
+}
+
+model Vendedor {
+  id         Int     @id @default(autoincrement())
+  nombre1    String  @db.VarChar(80)
+  apellido1  String  @db.VarChar(80)
+  apellido2  String? @db.VarChar(80)
+  activo     Boolean @default(true)
+  usuario_id Int?    @unique
+
+  usuario Usuario? @relation(fields: [usuario_id], references: [id], onDelete: SetNull)
+
+  ordenes OrdenTrabajo[]
+
+  @@map("vendedores")
+}
+
+model Tecnico {
+  id         Int     @id @default(autoincrement())
+  nombre1    String  @db.VarChar(80)
+  apellido1  String  @db.VarChar(80)
+  apellido2  String? @db.VarChar(80)
+  activo     Boolean @default(true)
+  usuario_id Int?    @unique
+
+  usuario Usuario? @relation(fields: [usuario_id], references: [id], onDelete: SetNull)
+
+  ordenes OrdenTrabajo[]
+
+  @@map("tecnicos")
+}
+
+// ── Clientes ────────────────────────────────────────────────────────────────
+// Fuente: `dtos/clients/client_detail_dto.py`.
+
+model Cliente {
+  id           Int     @id @default(autoincrement())
+  rut          String  @unique @db.VarChar(20)
+  rut_validado Boolean @default(false)
+
+  nombre1   String  @db.VarChar(80)
+  nombre2   String? @db.VarChar(80)
+  nombre3   String? @db.VarChar(80)
+  apellido1 String  @db.VarChar(80)
+  apellido2 String? @db.VarChar(80)
+
+  email String? @db.VarChar(254)
+  tel   String? @db.VarChar(30)
+
+  co_titular1 String? @db.VarChar(160)
+  co_titular2 String? @db.VarChar(160)
+
+  // `sector` / `zona` del DTO NO son columnas: se derivan de la dirección
+  // principal (D4). Ver el desvío 6 en la cabecera.
+
+  // Estado comercial
+  activo       Boolean   @default(false)
+  por_instalar Boolean   @default(false)
+  moroso       Boolean   @default(false)
+  moroso_desde DateTime? @db.Date
+  deuda        Int       @default(0)
+  monto_total  Int       @default(0)
+
+  // Flags de integraciones externas (ROADMAP R5: se persisten, las
+  // integraciones se posponen).
+  krill     Boolean @default(false)
+  defontana Boolean @default(false)
+  zammad    Boolean @default(false)
+
+  // Equipos / CPEs
+  cpes_todos     Int @default(0)
+  cpes_inactivos Int @default(0)
+
+  // Ciclo de vida
+  fecha_creacion   DateTime  @default(now()) @db.Date
+  fecha_de_baja    DateTime? @db.Date
+  causa_de_baja_id Int?
+
+  // Marcas varias
+  donacion           Boolean @default(false)
+  analogo            Boolean @default(false)
+  corte_poste        Boolean @default(false)
+  baja_por_renuncia  Boolean @default(false)
+  baja_por_morosidad Boolean @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  causa_de_baja CausaBaja? @relation(fields: [causa_de_baja_id], references: [id], onDelete: SetNull)
+
+  direcciones    Direccion[]
+  servicios      Servicio[]
+  ordenes        OrdenTrabajo[]
+  pagos          Pago[]
+  transferencias Transferencia[]
+
+  @@index([rut])
+  @@index([activo])
+  @@index([moroso])
+  @@index([fecha_creacion])
+  @@index([causa_de_baja_id])
+  @@map("clientes")
+}
+
+// ── Direcciones ─────────────────────────────────────────────────────────────
+// Fuente: `dtos/addresses/direction_detail_dto.py`.
+
+model Direccion {
+  id         Int  @id @default(autoincrement())
+  cliente_id Int
+  sector_id  Int?
+
+  activo      Boolean @default(true)
+  principal   Boolean @default(false)
+  contrato    Int?
+  sucursal    String? @db.VarChar(160)
+  direccion   String
+  coordenadas String? @db.VarChar(80)
+  monto       Int     @default(0)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  cliente Cliente @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  sector  Sector? @relation(fields: [sector_id], references: [id], onDelete: SetNull)
+
+  servicios Servicio[]
+  ordenes   OrdenTrabajo[]
+
+  // NOTA: existe además un índice único PARCIAL
+  // `uq_direccion_principal ON direcciones (cliente_id) WHERE principal`
+  // —máximo una dirección principal por cliente—. Prisma no puede declarar
+  // índices parciales, así que vive en el SQL de la migración `init`.
+  // `prisma migrate diff` no lo ve: NO borrarlo al regenerar migraciones.
+  @@index([cliente_id])
+  @@index([sector_id])
+  @@map("direcciones")
+}
+
+// ── Servicios contratados ───────────────────────────────────────────────────
+// Fuente: `dtos/service/service_detail_dto.py`.
+
+model Servicio {
+  id           Int  @id @default(autoincrement())
+  cliente_id   Int
+  direccion_id Int?
+  elemento_id  Int
+
+  activo        Boolean @default(true)
+  cantidad      Int     @default(1)
+  monto         Int     @default(0)
+  /// false → el monto sale de `elementos.monto_base × cantidad`.
+  /// true  → monto manual. Confirmar con negocio en la Fase 6.
+  personalizado Boolean @default(false)
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  cliente   Cliente    @relation(fields: [cliente_id], references: [id], onDelete: Cascade)
+  direccion Direccion? @relation(fields: [direccion_id], references: [id], onDelete: SetNull)
+  elemento  Elemento   @relation(fields: [elemento_id], references: [id], onDelete: Restrict)
+
+  // NOTA: la migración `init` agrega a mano el CHECK
+  // `ck_servicios_cantidad_positiva (cantidad > 0)`. Prisma no soporta CHECKs
+  // en el DSL. Mismo cuidado que con el índice parcial de `direcciones`.
+  @@index([cliente_id])
+  @@index([elemento_id])
+  @@index([direccion_id])
+  @@map("servicios")
+}
+
+// ── Órdenes de trabajo ──────────────────────────────────────────────────────
+// Fuente: `dtos/work_orders/order_detail_dto.py` + `orders_table_dto.py`.
+// ~60 campos: la entidad más grande del sistema.
+
+model OrdenTrabajo {
+  id         Int  @id @default(autoincrement())
+  cliente_id Int?
+
+  // Integración KoboToolbox (formulario de terreno). Se persisten aunque la
+  // integración todavía no exista (ROADMAP Fase 7).
+  koboid               Int?
+  koboid_serie         Int?
+  kobo_asset_uid       String?   @db.VarChar(64)
+  kobo_submission_time DateTime? @db.Timestamptz(6)
+
+  // Snapshot del cliente al momento de la orden. Supuesto abierto: ¿se congela
+  // o se resuelve por join? Se decide en la Fase 7 (DATABASE_SCHEMA §10).
+  rut       String  @db.VarChar(20)
+  nombre1   String  @db.VarChar(80)
+  apellido1 String  @db.VarChar(80)
+  apellido2 String? @db.VarChar(80)
+  email     String? @db.VarChar(254)
+  tel       String? @db.VarChar(30)
+
+  // Contrato / tipo de orden
+  contrato_nuevo    Boolean   @default(false)
+  fecha_contrato    DateTime? @db.Date
+  modificacion_plan Boolean   @default(false)
+  migracion         Boolean   @default(false)
+  traslado          Boolean   @default(false)
+
+  // Servicio / equipamiento
+  servicio_id            Int?
+  anexos_extras          Int  @default(0)
+  anexos_extras_exterior Int  @default(0)
+  sintonizadores         Int  @default(0)
+  extensores_wifi        Int  @default(0)
+
+  // Costos
+  metros_extras       Int     @default(0)
+  costo_metros_extras Int     @default(0)
+  pago_instalacion    Boolean @default(true)
+  costo_instalacion   Int     @default(0)
+  monto               Int     @default(0)
+
+  // Ubicación / instalación.
+  // `direccion` es texto libre: el PUT del frontend manda un string, no un id
+  // (`states/work_orders/orders_detail_state.py`). `direccion_id` queda como
+  // vínculo opcional a la dirección real, para reportería.
+  direccion    String?
+  direccion_id Int?
+  coordenadas  String? @db.VarChar(80)
+  medidor_luz  Boolean @default(false)
+  ducto        Boolean @default(false)
+  metros_ducto Int     @default(0)
+  poda         Boolean @default(false)
+  vecino       Boolean @default(false)
+  postacion    Boolean @default(false)
+  postes       Int     @default(0)
+
+  // Observaciones
+  observacion_vendedor String?
+  observacion          String?
+
+  // Estado
+  abierto    Boolean @default(true)
+  evaluacion Boolean @default(false)
+  estado_id  Int?
+  causa_id   Int?
+  bienvenida Boolean @default(false)
+
+  // Comisión
+  comision        Boolean   @default(false)
+  comision_pagada Boolean   @default(false)
+  fecha_pago      DateTime? @db.Date
+
+  // Gestión / agenda.
+  // `fecha_ingreso` no estaba en DATABASE_SCHEMA.md pero el dashboard filtra
+  // por ella (`states/index/index_order_state.py`).
+  fecha_ingreso    DateTime  @default(now()) @db.Date
+  fecha_programado DateTime? @db.Timestamptz(6)
+  fecha_instalado  DateTime? @db.Timestamptz(6)
+
+  // Asignaciones. `tecnico2` es TEXTO, no FK: así lo manda el PUT y así lo
+  // declara `OrderDetailDTO.tecnico2: Optional[str]`.
+  vendedor_id Int?
+  tecnico_id  Int?
+  tecnico2    String? @db.VarChar(160)
+  zona_id     Int?
+  sector_id   Int?
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @updatedAt @db.Timestamptz(6)
+
+  cliente       Cliente?       @relation(fields: [cliente_id], references: [id], onDelete: SetNull)
+  servicio      ServicioOrden? @relation(fields: [servicio_id], references: [id], onDelete: SetNull)
+  direccion_rel Direccion?     @relation(fields: [direccion_id], references: [id], onDelete: SetNull)
+  estado        EstadoOrden?   @relation(fields: [estado_id], references: [id], onDelete: SetNull)
+  causa         CausaOrden?    @relation(fields: [causa_id], references: [id], onDelete: SetNull)
+  vendedor      Vendedor?      @relation(fields: [vendedor_id], references: [id], onDelete: SetNull)
+  tecnico       Tecnico?       @relation(fields: [tecnico_id], references: [id], onDelete: SetNull)
+  zona          Zona?          @relation(fields: [zona_id], references: [id], onDelete: SetNull)
+  sector        Sector?        @relation(fields: [sector_id], references: [id], onDelete: SetNull)
+
+  notas NotaOrden[]
+
+  @@index([cliente_id])
+  @@index([abierto])
+  @@index([estado_id])
+  @@index([tecnico_id])
+  @@index([vendedor_id])
+  @@index([sector_id])
+  @@index([zona_id])
+  @@index([fecha_ingreso])
+  @@index([fecha_programado])
+  @@index([fecha_instalado])
+  @@map("ordenes_trabajo")
+}
+
+/// Notas de una orden (`dtos/work_orders/nota_dto.py`).
+model NotaOrden {
+  id               Int      @id @default(autoincrement())
+  orden_trabajo_id Int
+  nota             String
+  added_by_id      Int?
+  fecha_creacion   DateTime @default(now()) @db.Timestamptz(6)
+
+  orden_trabajo OrdenTrabajo @relation(fields: [orden_trabajo_id], references: [id], onDelete: Cascade)
+  added_by      Usuario?     @relation("NotaAddedBy", fields: [added_by_id], references: [id], onDelete: SetNull)
+
+  @@index([orden_trabajo_id])
+  @@map("notas_orden")
+}
+
+// ── Pagos ───────────────────────────────────────────────────────────────────
+// Fuente: `dtos/payments/payment_table_dto.py`. Solo lectura desde el frontend
+// (no hay alta): el origen de los datos se define antes de la Fase 8 (R3).
+//
+// OJO: los FILTROS de esta entidad llegan en camelCase (`entryDate_after`,
+// `fiscalYear`, `voucherType`, `documentType`, `entryUser`). Las COLUMNAS y los
+// campos de respuesta siguen siendo snake_case — el mapeo lo hace el
+// FilterEngine de la Fase 2, no la base.
+
+model Pago {
+  id          Int     @id @default(autoincrement())
+  cliente_id  Int?
+  /// `cliente_existe` del DTO es calculado: `cliente_id IS NOT NULL`.
+  /// Snapshot para conciliación cuando el pago llega sin cliente asociado.
+  cliente_rut String? @db.VarChar(20)
+
+  voucher_rut    String? @db.VarChar(20)
+  voucher_type   String? @db.VarChar(20)
+  voucher_number Int?
+  fiscal_year    Int?    @db.SmallInt
+
+  date       DateTime  @db.Date
+  entry_date DateTime? @db.Date
+  entry_user String?   @db.VarChar(150)
+
+  credit          Int       @default(0)
+  document_type   String?   @db.VarChar(40)
+  folio_number    String?   @db.VarChar(40)
+  expiration_date DateTime? @db.Date
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  cliente Cliente? @relation(fields: [cliente_id], references: [id], onDelete: SetNull)
+
+  @@index([cliente_id])
+  @@index([date])
+  @@index([entry_date])
+  @@index([cliente_rut])
+  @@map("pagos")
+}
+
+// ── Transferencias ──────────────────────────────────────────────────────────
+// Fuente: `dtos/transfers/transfers_table_dto.py`. El único write del frontend
+// es el PUT que asigna `cliente`.
+
+model Transferencia {
+  id         Int  @id @default(autoincrement())
+  cliente_id Int?
+
+  fecha                DateTime @db.Date
+  rut_transferencia    String?  @db.VarChar(20)
+  nombre               String?  @db.VarChar(200)
+  banco_origen         String?  @db.VarChar(120)
+  cuenta_destino       String?  @db.VarChar(60)
+  monto                Int      @default(0)
+  estado               String?  @db.VarChar(40)
+  codigo_transferencia String?  @db.VarChar(80)
+  /// Lo produce `generar_voucher` (bulk-action). Integración externa sin
+  /// definir todavía — ROADMAP §3.9 / R2.
+  voucher_generado     String?  @db.VarChar(80)
+
+  // Documento asociado
+  documento_pagado      Boolean   @default(false)
+  documento_venta       String?   @db.VarChar(80)
+  documento_vencimiento DateTime? @db.Date
+
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+
+  cliente Cliente? @relation(fields: [cliente_id], references: [id], onDelete: SetNull)
+
+  @@index([cliente_id])
+  @@index([estado])
+  @@index([fecha])
+  @@map("transferencias")
+}

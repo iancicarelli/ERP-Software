@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "moduleResolution": "node",
+    "outDir": "./dist",
+    "baseUrl": "./",
+    "rootDir": "./src",
+    "strict": true,
+    "strictPropertyInitialization": false,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": false,
+    "removeComments": true,
+    // `incremental` NO: `nest-cli.json` tiene `deleteOutDir: true`, y las dos
+    // cosas juntas son una trampa. Al reiniciar, el CLI borra dist/ pero el
+    // .tsbuildinfo que quedó en el contenedor dice que la salida está al día,
+    // así que tsc informa "Found 0 errors" y no emite nada → `nest start` muere
+    // con "Cannot find module /app/dist/main". El proyecto compila en segundos;
+    // el caché no vale ese modo de falla.
+    "sourceMap": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

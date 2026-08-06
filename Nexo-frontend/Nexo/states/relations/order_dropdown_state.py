@@ -144,7 +144,9 @@ class OrderDropdownState(APIState):
             return
         self.loading_zonas = True
         try:
-            all_items = await self._load_paginated("/zonas-ordenes/")
+            # Catálogo unificado (D3): la misma tabla que usan clientes, pagos y
+            # transferencias. /zonas-ordenes/ no existe en el backend.
+            all_items = await self._load_paginated("/zonas/")
             opciones = []
             for item in all_items:
                 if isinstance(item, dict):
@@ -164,7 +166,9 @@ class OrderDropdownState(APIState):
             return
         self.loading_sectores = True
         try:
-            all_items = await self._load_paginated("/sectores-ordenes/")
+            # Catálogo unificado (D3), igual que las zonas. Cada ítem trae
+            # `zona` (el id) — de ahí sale `filter_sectores_by_zona_id`.
+            all_items = await self._load_paginated("/sectores/")
             self._sectores_raw = [item for item in all_items if isinstance(item, dict)]
             opciones = []
             for item in self._sectores_raw:
