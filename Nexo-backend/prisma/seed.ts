@@ -8,9 +8,11 @@
  * Todo lo de acá es idempotente: correrlo N veces deja la base igual que
  * correrlo una. Se puede encadenar detrás de `prisma migrate` sin pensarlo.
  *
- *   · usuario admin        (Fase 3)
- *   · catálogos            (Fase 4a) — datos reales de `config/utils/`
- *   · zonas y sectores     (Fase 4a) — Biobío y Araucanía, ver el archivo
+ *   · usuario admin              (Fase 3)
+ *   · catálogos                  (Fase 4a) — datos reales de `config/utils/`
+ *   · zonas y sectores           (Fase 4a) — Biobío y Araucanía, ver el archivo
+ *   · pagos y transferencias     (Fase 8)  — D10: la fase es solo lectura, sin
+ *                                            estas filas no hay nada que leer
  *
  * El volumen de prueba (~1000 clientes) llega en la Fase 11.
  * ============================================================================
@@ -18,6 +20,7 @@
 import { PrismaClient } from '@prisma/client';
 
 import { sembrarCatalogos } from './seeds/catalogos';
+import { sembrarPagosTransferencias } from './seeds/pagos-transferencias';
 import { sembrarUsuarioAdmin } from './seeds/usuario-admin';
 import { sembrarZonasSectores } from './seeds/zonas-sectores';
 
@@ -27,6 +30,9 @@ async function main(): Promise<void> {
   await sembrarUsuarioAdmin(prisma);
   await sembrarCatalogos(prisma);
   await sembrarZonasSectores(prisma);
+  // Va último: necesita los sectores ya sembrados para armar la dirección
+  // principal de sus clientes de prueba.
+  await sembrarPagosTransferencias(prisma);
 }
 
 main()

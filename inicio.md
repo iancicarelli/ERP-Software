@@ -113,8 +113,18 @@ curl -s -H "Authorization: Bearer $ACC" http://localhost:3001/api/ordenes  | jq
 Salvo `/api/health` y `/api/token*`, todas las rutas exigen el `Bearer`.
 
 Rutas disponibles: `/clientes`, `/direcciones`, `/servicios`, `/ordenes`,
-`/notas-ordenes`, más los catálogos `/estados-ordenes`, `/causas-ordenes`,
-`/tecnicos-ordenes`, `/vendedores-ordenes`, `/sectores`, `/zonas`.
+`/notas-ordenes`, `/pagos`, `/transferencias`, más los catálogos
+`/estados-ordenes`, `/causas-ordenes`, `/tecnicos-ordenes`,
+`/vendedores-ordenes`, `/sectores`, `/zonas`.
+
+Pagos y transferencias son **solo lectura** (los datos llegan por conciliación,
+no por formulario), con una excepción: asignar el cliente de una transferencia.
+
+```bash
+curl -s -X PATCH http://localhost:3001/api/transferencias/3/ \
+  -H "Authorization: Bearer $ACC" -H 'Content-Type: application/json' \
+  -d '{"cliente": 9}'
+```
 
 ---
 

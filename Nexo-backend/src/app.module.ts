@@ -8,8 +8,10 @@ import { envValidationSchema } from './config/env.validation';
 import { DireccionesModule } from './direcciones/direcciones.module';
 import { HealthModule } from './health/health.module';
 import { OrdenesModule } from './ordenes/ordenes.module';
+import { PagosModule } from './pagos/pagos.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ServiciosModule } from './servicios/servicios.module';
+import { TransferenciasModule } from './transferencias/transferencias.module';
 
 /**
  * Raíz de la aplicación. La estructura es modular por entidad: cada fase del
@@ -38,6 +40,8 @@ import { ServiciosModule } from './servicios/servicios.module';
     DireccionesModule,
     ServiciosModule,
     OrdenesModule,
+    PagosModule,
+    TransferenciasModule,
     HealthModule,
   ],
 })
