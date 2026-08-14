@@ -68,6 +68,8 @@ const FILA = {
   ],
 };
 
+const SUMA_SERVICIOS_ACTIVOS = 34980;
+
 interface Registro {
   count?: { where?: unknown };
   findMany?: { where?: unknown; select?: unknown; orderBy?: unknown; skip?: number; take?: number };
@@ -103,6 +105,12 @@ const prismaFalso = {
       registro.borrado = args;
       return Promise.resolve(FILA);
     },
+  },
+  // D6: el PUT recalcula `monto_total` desde los servicios activos. El valor
+  // es distinto del `monto_total` de FILA a propósito, para que el test note
+  // la diferencia entre "recalculó" y "dejó lo que había".
+  servicio: {
+    aggregate: () => Promise.resolve({ _sum: { monto: SUMA_SERVICIOS_ACTIVOS } }),
   },
   $transaction: (arg: unknown) =>
     Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(prismaFalso),
@@ -364,21 +372,32 @@ describe('Clientes sobre HTTP', () => {
       expect(Array.isArray(body.rut)).toBe(true);
     });
 
+    it('**descarta `monto_total`**: por D6 es derivado de los servicios', async () => {
+      await pedir('/clientes/', {
+        method: 'POST',
+        body: JSON.stringify({ ...CUERPO_VALIDO, monto_total: 999999 }),
+      });
+
+      // Mismo mecanismo que `sector`/`zona`: no está en el DTO, el `whitelist`
+      // lo tira. Un cliente nuevo arranca en 0 por el `@default(0)` del schema.
+      expect(registro.create?.data).not.toHaveProperty('monto_total');
+    });
+
     it('un monto con decimales → 400 (D5: CLP no tiene centavos)', async () => {
       const { status, body } = await pedir('/clientes/', {
         method: 'POST',
-        body: JSON.stringify({ ...CUERPO_VALIDO, monto_total: 1500.5 }),
+        body: JSON.stringify({ ...CUERPO_VALIDO, deuda: 1500.5 }),
       });
 
       expect(status).toBe(400);
-      expect(Object.keys(body)).toEqual(['monto_total']);
+      expect(Object.keys(body)).toEqual(['deuda']);
     });
 
     it('un monto entero escrito como float (0.0) se acepta', async () => {
       // El DTO del frontend declara `deuda: float` y manda 0.0.
       const { status } = await pedir('/clientes/', {
         method: 'POST',
-        body: JSON.stringify({ ...CUERPO_VALIDO, deuda: 0.0, monto_total: 19990.0 }),
+        body: JSON.stringify({ ...CUERPO_VALIDO, deuda: 0.0 }),
       });
 
       expect(status).toBe(201);
@@ -398,6 +417,20 @@ describe('Clientes sobre HTTP', () => {
       // respuesta viniera vacía, la ficha se rompería después de guardar.
       expect(status).toBe(200);
       expect(body).toMatchObject({ id: 42, rut: '16.204.579-2', sector: 'Gamboa' });
+    });
+
+    it('**recalcula `monto_total`** en vez de guardar el del formulario (D6)', async () => {
+      await pedir('/clientes/42/', {
+        method: 'PUT',
+        body: JSON.stringify({ ...CUERPO_VALIDO, monto_total: 1 }),
+      });
+
+      // El 1 que mandó el formulario no llega a Prisma: lo pisa la suma de los
+      // servicios activos. Es lo que hace que guardar la ficha CORRIJA un
+      // `monto_total` desincronizado en vez de romperlo.
+      expect(registro.update?.data).toMatchObject({
+        monto_total: SUMA_SERVICIOS_ACTIVOS,
+      });
     });
 
     it('id inexistente → 404 (no el P2025 crudo de Prisma)', async () => {

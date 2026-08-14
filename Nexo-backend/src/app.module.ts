@@ -7,7 +7,9 @@ import { ClientesModule } from './clientes/clientes.module';
 import { envValidationSchema } from './config/env.validation';
 import { DireccionesModule } from './direcciones/direcciones.module';
 import { HealthModule } from './health/health.module';
+import { OrdenesModule } from './ordenes/ordenes.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ServiciosModule } from './servicios/servicios.module';
 
 /**
  * Raíz de la aplicación. La estructura es modular por entidad: cada fase del
@@ -34,6 +36,8 @@ import { PrismaModule } from './prisma/prisma.module';
     CatalogosModule,
     ClientesModule,
     DireccionesModule,
+    ServiciosModule,
+    OrdenesModule,
     HealthModule,
   ],
 })

@@ -1,5 +1,7 @@
 import { Prisma } from '@prisma/client';
 
+import { soloFecha } from '../common';
+
 /**
  * ============================================================================
  * Serialización de clientes — Fase 5
@@ -92,14 +94,7 @@ export function serializarCliente(
   };
 }
 
-/**
- * `Date` → `"YYYY-MM-DD"`. Las columnas `@db.Date` de Prisma vuelven como
- * `Date` a medianoche UTC y `JSON.stringify` las emitiría con hora y zona
- * (`2026-08-04T00:00:00.000Z`). El `<input type="date">` del navegador solo
- * acepta `YYYY-MM-DD`, y aunque `hook_process_data()` del frontend trunca por
- * las suyas, mandar una fecha con hora en un campo que no la tiene es mentir
- * sobre el dato.
- */
-export function soloFecha(fecha: Date | null): string | null {
-  return fecha ? fecha.toISOString().slice(0, 10) : null;
-}
+// `soloFecha()` se mudó a `common/fechas.ts` en la Fase 7: órdenes lo necesita
+// y además agrega la variante con hora (`fechaHora`). Se sigue re-exportando
+// desde acá porque los tests de la Fase 5 lo importan de este módulo.
+export { soloFecha };

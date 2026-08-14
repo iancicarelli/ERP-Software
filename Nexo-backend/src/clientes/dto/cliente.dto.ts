@@ -112,9 +112,12 @@ export class ClienteWriteDto {
   @IsInt({ message: 'Debe ser un número entero.' })
   deuda?: number;
 
-  @IsOptional()
-  @IsInt({ message: 'Debe ser un número entero.' })
-  monto_total?: number;
+  // `monto_total` NO va acá a propósito (D6): es derivado de la suma de los
+  // servicios activos, igual que `sector` y `zona` lo son de la dirección
+  // principal por D4. El frontend lo sigue mandando —arrastra el objeto tal
+  // como lo recibió— y el `whitelist: true` del ValidationPipe lo descarta sin
+  // error. Rechazarlo rompería cada guardado de la ficha.
+  // Ver `servicios/monto-total.ts`.
 
   // ── Integraciones externas (se persisten; las integraciones no existen) ──
   @IsOptional()

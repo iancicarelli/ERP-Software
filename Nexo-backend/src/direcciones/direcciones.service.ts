@@ -6,7 +6,13 @@ import {
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { FilterEngine, FilterMap, PaginationParams, RawQuery } from '../common';
+import {
+  FilterEngine,
+  FilterMap,
+  nombreDelConstraint,
+  PaginationParams,
+  RawQuery,
+} from '../common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   DIRECCION_INCLUDE,
@@ -202,10 +208,15 @@ function vacioANull(valor: string | undefined): string | null | undefined {
 function traducirErrorDePrisma(error: unknown): unknown {
   if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return error;
 
-  // FK inexistente: o el cliente o el sector. El mensaje de Prisma nombra el
-  // constraint, así que se puede decir cuál de los dos.
+  // FK inexistente: o el cliente o el sector. El constraint que falló viene en
+  // el `meta`, así que se puede decir cuál de los dos.
+  //
+  // Se lee con `nombreDelConstraint()` (Fase 6, `common/errors/prisma-meta.ts`):
+  // esto leía `meta.field_name`, que Prisma 6 ya no emite —usa
+  // `meta.constraint`—, así que un sector inexistente venía saliendo como
+  // "El cliente indicado no existe."
   if (error.code === 'P2003') {
-    const campo = String(error.meta?.field_name ?? '').includes('sector')
+    const campo = nombreDelConstraint(error.meta).includes('sector')
       ? 'sector'
       : 'cliente';
     return new BadRequestException({

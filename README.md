@@ -76,8 +76,8 @@ navegador ──> frontend:3000  (UI)
 
 ## Estado del proyecto
 
-El frontend está construido. El backend llegó al **MVP funcional**: login real
-y el módulo de clientes operativo de punta a punta.
+El frontend está construido. El backend cubre login real y los módulos de
+clientes, direcciones, servicios y órdenes de trabajo de punta a punta.
 
 | Área | Endpoints |
 |------|-----------|
@@ -86,14 +86,27 @@ y el módulo de clientes operativo de punta a punta.
 | Catálogos | `/zonas/`, `/sectores/`, `/elementos/`, `/causadebajas/`, `/servicios-ordenes/`, `/estados-ordenes/`, `/causas-ordenes/`, `/tecnicos-ordenes/`, `/vendedores-ordenes/` |
 | Clientes | `/clientes/` (GET, POST), `/clientes/{id}/` (GET, PUT, DELETE), `/clientes/all-ids/` |
 | Direcciones | `/direcciones/` (GET, POST), `/direcciones/{id}/` (GET, PUT, DELETE) |
+| Servicios | `/servicios/` (GET, POST), `/servicios/{id}/` (GET, PUT, DELETE) |
+| Órdenes | `/ordenes/` (GET, POST), `/ordenes/{id}/` (GET, PUT), `/ordenes/all-ids/` |
+| Notas de orden | `/notas-ordenes/` (GET `?orden_trabajo_id=`, POST) |
 
-Servicios, órdenes, pagos y transferencias todavía no existen, así que esas
-tablas —y el dashboard, que cuenta sobre ellas— cargan vacías. La hoja de ruta
+Pagos y transferencias todavía no existen, así que esas tablas —y la parte del
+dashboard que cuenta sobre ellas— cargan vacías. Las acciones masivas
+(`bulk-action`: exportar CSV, imprimir la orden en PDF) tampoco. La hoja de ruta
 completa está en `ROADMAP.md` (git-ignored).
 
-> Las zonas y los sectores del seed son **datos de desarrollo inventados**
-> (`prisma/seeds/zonas-desarrollo.ts`); el resto de los catálogos sí son los
-> valores reales que el frontend tenía hardcodeados.
+> Una orden guarda los datos del cliente **como copia** (`rut`, `nombre1`,
+> `apellido1`, `email`, `tel`), y el vínculo con la ficha se resuelve por RUT al
+> guardar. Si el RUT no corresponde a ningún cliente, la orden se guarda igual y
+> queda sin vincular: es el caso de una venta a alguien que todavía no está dado
+> de alta.
+
+> Las zonas y los sectores del seed (`prisma/seeds/zonas-sectores.ts`) son 10
+> comunas del Biobío y La Araucanía con sus sectores reales. Editar ese archivo
+> y volver a correr el seed alcanza para cambiarlos: la función reconcilia y
+> borra lo que ya no está en la lista, salvo lo que tenga direcciones u órdenes
+> colgando, que se conserva y se avisa por consola. El resto de los catálogos
+> son los valores que el frontend tenía hardcodeados.
 
 > Al agregar una dependencia npm hay que reconstruir la imagen
 > (`docker compose up -d --build backend`): el bind mount de desarrollo solo

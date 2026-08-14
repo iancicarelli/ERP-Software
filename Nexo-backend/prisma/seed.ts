@@ -10,7 +10,7 @@
  *
  *   · usuario admin        (Fase 3)
  *   · catálogos            (Fase 4a) — datos reales de `config/utils/`
- *   · zonas y sectores     (Fase 4a) — ⚠️ INVENTADOS, ver el archivo
+ *   · zonas y sectores     (Fase 4a) — Biobío y Araucanía, ver el archivo
  *
  * El volumen de prueba (~1000 clientes) llega en la Fase 11.
  * ============================================================================
@@ -19,14 +19,14 @@ import { PrismaClient } from '@prisma/client';
 
 import { sembrarCatalogos } from './seeds/catalogos';
 import { sembrarUsuarioAdmin } from './seeds/usuario-admin';
-import { sembrarZonasDesarrollo } from './seeds/zonas-desarrollo';
+import { sembrarZonasSectores } from './seeds/zonas-sectores';
 
 const prisma = new PrismaClient();
 
 async function main(): Promise<void> {
   await sembrarUsuarioAdmin(prisma);
   await sembrarCatalogos(prisma);
-  await sembrarZonasDesarrollo(prisma);
+  await sembrarZonasSectores(prisma);
 }
 
 main()

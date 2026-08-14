@@ -25,7 +25,18 @@ FIELDS_ADMINISTRATIVA = [
     {"key": "moroso", "label": "Estado Moroso", "type": "boolean"},
     {"key": "moroso_desde", "label": "Moroso Desde", "type": "date"},
     {"key": "deuda", "label": "Deuda Total", "type": "number"},
-    {"key": "monto_total", "label": "Monto Total", "type": "number"},
+    # Derivado (ROADMAP D6): lo calcula el backend sumando los servicios
+    # ACTIVOS del cliente, y lo recalcula en cada PUT. Editarlo acá no tendría
+    # efecto —el backend descarta el campo—, así que se muestra como texto.
+    # El valor en pantalla se actualiza solo: el PUT devuelve el objeto
+    # recalculado y `save_entity()` lo reasigna al DTO.
+    {
+        "key": "monto_total",
+        "label": "Monto Total",
+        "type": "number",
+        "readonly": True,
+        "display": "text",
+    },
     {"key": "por_instalar", "label": "Pendiente Instalar", "type": "boolean"},
     {"key": "donacion", "label": "Donación", "type": "boolean"},
     {"key": "fecha_de_baja", "label": "Fecha de Baja", "type": "date"},

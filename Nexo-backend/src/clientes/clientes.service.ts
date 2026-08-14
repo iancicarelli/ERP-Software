@@ -9,6 +9,7 @@ import {
   resolveCountFilters,
 } from '../common';
 import { PrismaService } from '../prisma/prisma.service';
+import { sumaDeServiciosActivos } from '../servicios/monto-total';
 import { CLIENTE_FILTERS } from './clientes.filters';
 import { CLIENTE_INCLUDE, serializarCliente } from './clientes.serializer';
 import { ClienteWriteDto } from './dto/cliente.dto';
@@ -102,6 +103,12 @@ export class ClientesService {
    * que un cliente que mande medio payload solo toca esa mitad. El frontend
    * manda el objeto entero en cada guardado, así que en la práctica es un
    * reemplazo completo.
+   *
+   * **`monto_total` se recalcula acá** (D6). No sale del payload —el DTO ya no
+   * lo declara— sino de la suma de los servicios activos, y viaja en el mismo
+   * `update` que el resto de los campos para no hacer dos escrituras sobre la
+   * misma fila. Efecto útil: guardar la ficha corrige un `monto_total` que
+   * hubiera quedado desincronizado, así que no hace falta un backfill.
    */
   async actualizar(
     id: number,
@@ -110,11 +117,16 @@ export class ClientesService {
     await this.existeOFalla(id);
 
     try {
-      const cliente = await this.prisma.cliente.update({
-        where: { id },
-        data: aDatosPrisma(dto),
-        include: CLIENTE_INCLUDE,
+      const cliente = await this.prisma.$transaction(async (tx) => {
+        const monto_total = await sumaDeServiciosActivos(tx, id);
+
+        return tx.cliente.update({
+          where: { id },
+          data: { ...aDatosPrisma(dto), monto_total },
+          include: CLIENTE_INCLUDE,
+        });
       });
+
       return serializarCliente(cliente);
     } catch (error) {
       throw traducirErrorDePrisma(error);
@@ -170,6 +182,10 @@ export class ClientesService {
  *
  * Los `undefined` se dejan pasar tal cual: Prisma los interpreta como "no
  * tocar este campo".
+ *
+ * **No incluye `monto_total`** (D6): es derivado. Lo pone `actualizar()` desde
+ * `sumaDeServiciosActivos()`, y en el alta lo resuelve el `@default(0)` del
+ * schema. `deuda` sí viene del payload — esa no la calcula nadie.
  */
 function aDatosPrisma(dto: ClienteWriteDto): Prisma.ClienteUncheckedCreateInput {
   return {
@@ -194,7 +210,6 @@ function aDatosPrisma(dto: ClienteWriteDto): Prisma.ClienteUncheckedCreateInput 
     moroso_desde: aFecha(dto.moroso_desde),
 
     deuda: dto.deuda,
-    monto_total: dto.monto_total,
 
     krill: dto.krill,
     defontana: dto.defontana,

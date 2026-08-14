@@ -12,7 +12,7 @@ import { PrismaClient } from '@prisma/client';
  *
  * Lo único que NO sale de ahí son las zonas y los sectores: esas listas se
  * borraron del frontend cuando pasaron a la API y no quedó rastro. Van en
- * `zonas-desarrollo.ts`, aparte y marcadas como dato de desarrollo.
+ * `zonas-sectores.ts`, aparte, con localidades reales de Biobío y La Araucanía.
  *
  * Todo es idempotente: se puede correr N veces sin duplicar ni pisar cambios.
  * ============================================================================
@@ -126,6 +126,19 @@ const SERVICIOS_ORDEN = [
  * pantalla se ve igual se corte donde se corte. Lo que sí depende del corte
  * son los filtros por campo de la Fase 7 (`vendedor_nombre1`,
  * `tecnico_apellido1`). **Validar los nombres compuestos con negocio.**
+ *
+ * ── D8 (decidida el 2026-08-11): el corte se queda, el seed reconcilia ──
+ * Los 6 filtros de personas de la Fase 7 se declaran `icontains`, así que un
+ * corte discutible casi no se nota al buscar: `tecnico_nombre1=Juan` encuentra
+ * igual a "Juan Carlos". Lo que sí dolía era corregirlo después.
+ *
+ * `sembrarPersonas()` reconcilia, como `zonas-sectores.ts`. Antes deduplicaba
+ * con un `findFirst({ nombre1, apellido1 })` y **no actualizaba nada**: cambiar
+ * el corte de "Juan Carlos Castillo" no corregía la fila, creaba un técnico
+ * nuevo y dejaba el viejo con sus órdenes colgando. Es el mismo modo de falla
+ * que dejó vivas las zonas de Chiloé hasta la Fase 4a.
+ *
+ * Ahora corregir un nombre es editar el array y volver a correr el seed.
  */
 type Persona = readonly [nombre1: string, apellido1: string, apellido2?: string];
 
@@ -215,23 +228,118 @@ export async function sembrarCatalogos(prisma: PrismaClient): Promise<void> {
   }
   console.log(`· servicios de orden: ${SERVICIOS_ORDEN.length}`);
 
-  // ── Personas: sin UNIQUE, hay que buscar antes ────────────────────────
-  // No se le pone UNIQUE al nombre a propósito: dos técnicos pueden llamarse
-  // igual. El seed deduplica por nombre completo, que para estas listas
-  // (donde cada persona aparece una vez) alcanza.
-  for (const [nombre1, apellido1, apellido2] of TECNICOS) {
-    const existente = await prisma.tecnico.findFirst({ where: { nombre1, apellido1 } });
-    if (!existente) {
-      await prisma.tecnico.create({ data: { nombre1, apellido1, apellido2: apellido2 ?? null } });
-    }
-  }
-  console.log(`· técnicos: ${TECNICOS.length}`);
+  await sembrarPersonas(prisma.tecnico as unknown as DelegadoPersona, TECNICOS, {
+    singular: 'técnico',
+    plural: 'técnicos',
+  });
+  await sembrarPersonas(prisma.vendedor as unknown as DelegadoPersona, VENDEDORES, {
+    singular: 'vendedor',
+    plural: 'vendedores',
+  });
+}
 
-  for (const [nombre1, apellido1, apellido2] of VENDEDORES) {
-    const existente = await prisma.vendedor.findFirst({ where: { nombre1, apellido1 } });
-    if (!existente) {
-      await prisma.vendedor.create({ data: { nombre1, apellido1, apellido2: apellido2 ?? null } });
+/**
+ * Lo que `sembrarPersonas()` usa de un delegate de Prisma. `tecnico` y
+ * `vendedor` son dos modelos con exactamente la misma forma, pero sus tipos
+ * generados son distintos y TypeScript no los unifica: de ahí la interfaz
+ * mínima y el cast en el llamador.
+ */
+interface DelegadoPersona {
+  findFirst(args: {
+    where: { nombre1: string; apellido1: string };
+  }): Promise<{ id: number } | null>;
+  create(args: {
+    data: { nombre1: string; apellido1: string; apellido2: string | null };
+  }): Promise<unknown>;
+  update(args: {
+    where: { id: number };
+    data: { apellido2: string | null };
+  }): Promise<unknown>;
+  findMany(args: {
+    include: { _count: { select: { ordenes: true } } };
+  }): Promise<
+    Array<{
+      id: number;
+      nombre1: string;
+      apellido1: string;
+      usuario_id: number | null;
+      _count: { ordenes: number };
+    }>
+  >;
+  deleteMany(args: { where: { id: { in: number[] } } }): Promise<unknown>;
+}
+
+/**
+ * Inserta, actualiza y reconcilia una lista de personas.
+ *
+ * **Identidad = `nombre1 + apellido1`.** No hay UNIQUE en la base a propósito
+ * —dos técnicos pueden llamarse igual—, así que la deduplicación vive acá; para
+ * estas listas, donde cada persona aparece una vez, alcanza.
+ *
+ * Consecuencia de esa elección: si se corrige el corte de un nombre compuesto
+ * ("Juan Carlos" + "Castillo" → "Juan" + "Carlos Castillo"), la fila vieja NO
+ * se reconoce como la misma persona. Si no tiene órdenes, se borra y se crea la
+ * nueva —el resultado es el correcto—. Si tiene órdenes, se conserva y quedan
+ * las dos: eso hay que resolverlo a mano, y el seed lo grita por consola en vez
+ * de dejarlo pasar en silencio, que es lo que hacía antes.
+ *
+ * Tampoco se borra a nadie con un usuario enganchado (`usuario_id`): esa fila
+ * es la contraparte de una cuenta real, no un dato de catálogo.
+ */
+async function sembrarPersonas(
+  delegado: DelegadoPersona,
+  personas: ReadonlyArray<Persona>,
+  etiqueta: { singular: string; plural: string },
+): Promise<void> {
+  for (const [nombre1, apellido1, apellido2] of personas) {
+    const existente = await delegado.findFirst({ where: { nombre1, apellido1 } });
+
+    if (existente) {
+      // El apellido materno sí se corrige sobre la fila existente: no forma
+      // parte de la identidad, así que cambiarlo no crea una persona nueva.
+      await delegado.update({
+        where: { id: existente.id },
+        data: { apellido2: apellido2 ?? null },
+      });
+    } else {
+      await delegado.create({
+        data: { nombre1, apellido1, apellido2: apellido2 ?? null },
+      });
     }
   }
-  console.log(`· vendedores: ${VENDEDORES.length}`);
+
+  console.log(`· ${etiqueta.plural}: ${personas.length}`);
+
+  // ── Reconciliación ──
+  const enLista = new Set(personas.map(([nombre1, apellido1]) => `${nombre1} ${apellido1}`));
+
+  const todas = await delegado.findMany({
+    include: { _count: { select: { ordenes: true } } },
+  });
+
+  const sobrantes = todas.filter(
+    (p) => !enLista.has(`${p.nombre1} ${p.apellido1}`),
+  );
+
+  const libres = sobrantes.filter((p) => p._count.ordenes === 0 && p.usuario_id === null);
+
+  if (libres.length > 0) {
+    await delegado.deleteMany({ where: { id: { in: libres.map((p) => p.id) } } });
+    console.log(`· ${etiqueta.plural} obsoletos eliminados: ${libres.length}`);
+  }
+
+  for (const persona of sobrantes) {
+    if (libres.includes(persona)) continue;
+
+    const motivo =
+      persona._count.ordenes > 0
+        ? `${persona._count.ordenes} orden(es)`
+        : 'un usuario asociado';
+
+    console.warn(
+      `  ⚠️  ${etiqueta.singular} "${persona.nombre1} ${persona.apellido1}" ya no está en la ` +
+        `lista pero tiene ${motivo}. Se conserva: si es el mismo nombre escrito de ` +
+        `otra forma, quedó duplicado y hay que unificarlo a mano.`,
+    );
+  }
 }
