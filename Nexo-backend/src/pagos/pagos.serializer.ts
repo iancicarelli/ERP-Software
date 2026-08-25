@@ -112,8 +112,13 @@ export function serializarPago(pago: PagoConRelaciones): Record<string, unknown>
   };
 }
 
-/** `"Juan Pedro Pérez Soto"`, igual que en el serializer de servicios. */
-function nombreCompleto(cliente: {
+/**
+ * `"Juan Pedro Pérez Soto"`, igual que en el serializer de servicios.
+ *
+ * Exportada desde la Fase 9: la usa también el CSV de pagos, que tiene que
+ * escribir el MISMO nombre que muestra la columna "Cliente" de la tabla.
+ */
+export function nombreCompleto(cliente: {
   nombre1: string;
   nombre2: string | null;
   apellido1: string;

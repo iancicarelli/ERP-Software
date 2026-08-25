@@ -10,9 +10,22 @@ import {
   Post,
   Put,
   Query,
+  Res,
+  StreamableFile,
 } from '@nestjs/common';
+import { Response } from 'express';
 
-import { paginated, Pagination, PaginationParams, RawQuery } from '../common';
+import {
+  accionNoSoportada,
+  BulkActionDto,
+  comoAdjunto,
+  CSV_CONTENT_TYPE,
+  nombreConFecha,
+  paginated,
+  Pagination,
+  PaginationParams,
+  RawQuery,
+} from '../common';
 import { ClientesService } from './clientes.service';
 import { ClienteWriteDto } from './dto/cliente.dto';
 
@@ -25,6 +38,7 @@ import { ClienteWriteDto } from './dto/cliente.dto';
  * | `/clientes/` | GET | 200 | `ClientTableState`, `TransferAssignClientState` (`?search=`) |
  * | `/clientes/` | POST | **201** | `ClientAddState.add_entity()` |
  * | `/clientes/all-ids/` | GET | 200 | selección masiva |
+ * | `/clientes/bulk-action/` | POST | **200** | acciones masivas (Fase 9) |
  * | `/clientes/{id}/` | GET | 200 | `ClientDetailState`, alta de dirección |
  * | `/clientes/{id}/` | PUT | 200 | `ClientDetailState.save_entity()` |
  * | `/clientes/{id}/` | DELETE | **204** | botón Eliminar del detalle |
@@ -47,6 +61,43 @@ export class ClientesController {
   @Get('all-ids')
   async todosLosIds(@Query() query: RawQuery) {
     return { ids: await this.clientes.todosLosIds(query) };
+  }
+
+  /**
+   * `POST /api/clientes/bulk-action/` — ROADMAP §3.9.
+   *
+   * ⚠️ **200 y no 201.** Nest responde 201 a todo POST y el frontend compara
+   * contra `response.status_code == 200` exacto: con el default, el diálogo de
+   * la suma nunca se abriría y el CSV nunca se bajaría, sin ningún error a la
+   * vista.
+   *
+   * El dispatcher vive en el controller —y no en el service— porque las dos
+   * acciones devuelven cosas de naturaleza distinta: una es JSON y la otra un
+   * archivo, y el archivo necesita tocar los headers de la respuesta.
+   *
+   * `passthrough: true` es lo que permite fijar esos headers sin perder el
+   * manejo de errores de Nest: si `exportarCsv` fallara ANTES de emitir el
+   * primer chunk, el `DrfExceptionFilter` todavía puede responder un JSON de
+   * error. Con `@Res()` a secas, Nest se desentiende de la respuesta y un error
+   * quedaría colgado.
+   */
+  @Post('bulk-action')
+  @HttpCode(HttpStatus.OK)
+  async bulkAction(
+    @Body() dto: BulkActionDto,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<Record<string, unknown> | StreamableFile> {
+    switch (dto.action) {
+      case 'sumar_montos_deuda_action':
+        return this.clientes.sumarMontosYDeuda(dto.selected_ids);
+
+      case 'exportar_clientes_csv':
+        comoAdjunto(res, nombreConFecha('clientes', 'csv'), CSV_CONTENT_TYPE);
+        return new StreamableFile(this.clientes.exportarCsv(dto.selected_ids));
+
+      default:
+        throw accionNoSoportada(dto.action);
+    }
   }
 
   @Get(':id')

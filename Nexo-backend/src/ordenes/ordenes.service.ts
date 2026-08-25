@@ -1,10 +1,21 @@
+import { Readable } from 'node:stream';
+
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
-import { FilterEngine, nombreDelConstraint, PaginationParams, RawQuery } from '../common';
+import {
+  csvComoStream,
+  FilterEngine,
+  lotesOrdenados,
+  nombreDelConstraint,
+  PaginationParams,
+  RawQuery,
+} from '../common';
 import { PrismaService } from '../prisma/prisma.service';
 import { OrdenWriteDto } from './dto/orden.dto';
+import { COLUMNAS_CSV_ORDENES } from './ordenes.csv';
 import { ORDEN_FILTERS } from './ordenes.filters';
+import { MAX_ORDENES_PDF, ORDEN_PDF_INCLUDE, pdfDeOrdenes } from './ordenes.pdf';
 import {
   ORDEN_INCLUDE,
   serializarOrdenDetalle,
@@ -69,6 +80,70 @@ export class OrdenesService {
     });
 
     return filas.map((fila) => fila.id);
+  }
+
+  /**
+   * `exportar_ordenes_csv` — ROADMAP §3.9. Mismo `orderBy` que el listado
+   * (`id desc`), así el archivo sale en el orden de la pantalla.
+   */
+  exportarCsv(ids: number[]): Readable {
+    return csvComoStream(
+      COLUMNAS_CSV_ORDENES,
+      lotesOrdenados(
+        async () => {
+          const filas = await this.prisma.ordenTrabajo.findMany({
+            where: { id: { in: ids } },
+            select: { id: true },
+            orderBy: { id: 'desc' },
+          });
+          return filas.map((fila) => fila.id);
+        },
+        (lote) =>
+          this.prisma.ordenTrabajo.findMany({
+            where: { id: { in: lote } },
+            include: ORDEN_INCLUDE,
+            orderBy: { id: 'desc' },
+          }),
+      ),
+    );
+  }
+
+  /**
+   * `imprimir_orden_de_trabajo` — la ficha en PDF, una orden por página.
+   *
+   * A diferencia del CSV, acá se trae TODO de una: pdfmake necesita el
+   * documento entero antes de emitir el primer byte, así que el streaming por
+   * lotes no ahorraría memoria. Por eso también el tope propio
+   * (`MAX_ORDENES_PDF`), mucho más bajo que el de la selección.
+   *
+   * El orden es `id asc` y no `id desc` como el listado: son hojas que se
+   * reparten, y lo natural en papel es que la más vieja quede arriba.
+   */
+  async imprimir(ids: number[]): Promise<Readable> {
+    if (ids.length > MAX_ORDENES_PDF) {
+      throw new BadRequestException({
+        selected_ids: [
+          `No se pueden imprimir más de ${MAX_ORDENES_PDF} órdenes por archivo (seleccionaste ${ids.length}).`,
+        ],
+      });
+    }
+
+    const ordenes = await this.prisma.ordenTrabajo.findMany({
+      where: { id: { in: ids } },
+      include: ORDEN_PDF_INCLUDE,
+      orderBy: { id: 'asc' },
+    });
+
+    // Un PDF de cero páginas es un archivo corrupto: el visor del usuario diría
+    // "no se puede abrir" y nadie sabría por qué. Pasa si las órdenes se
+    // borraron entre la selección y el clic.
+    if (ordenes.length === 0) {
+      throw new BadRequestException({
+        detail: 'Ninguna de las órdenes seleccionadas existe.',
+      });
+    }
+
+    return pdfDeOrdenes(ordenes);
   }
 
   async obtener(id: number): Promise<Record<string, unknown>> {

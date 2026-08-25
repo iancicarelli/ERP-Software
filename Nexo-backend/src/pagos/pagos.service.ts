@@ -1,7 +1,16 @@
+import { Readable } from 'node:stream';
+
 import { Injectable } from '@nestjs/common';
 
-import { FilterEngine, PaginationParams, RawQuery } from '../common';
+import {
+  csvComoStream,
+  FilterEngine,
+  lotesOrdenados,
+  PaginationParams,
+  RawQuery,
+} from '../common';
 import { PrismaService } from '../prisma/prisma.service';
+import { COLUMNAS_CSV_PAGOS } from './pagos.csv';
 import { PAGO_FILTERS } from './pagos.filters';
 import { PAGO_INCLUDE, serializarPago } from './pagos.serializer';
 
@@ -59,9 +68,12 @@ export class PagosService {
    * divergieran, "seleccionar todo" marcaría pagos que el usuario no está
    * viendo y la suma de la Fase 9 saldría mal sin que nadie lo note.
    *
-   * ⚠️ Sin tope (R7): con la tabla llena esto puede devolver decenas de miles
-   * de ids. El límite duro se decide junto con `bulk-action` en la Fase 9,
-   * donde está el consumidor real.
+   * ⚠️ Sigue sin tope propio: con la tabla llena devuelve decenas de miles de
+   * ids. Lo que cierra R7 es el otro extremo — `MAX_SELECCION` en
+   * `common/bulk/bulk-action.dto.ts` rechaza la selección al ejecutar la
+   * acción, que es donde el volumen se vuelve caro (Fase 9). Acá el costo es
+   * un `SELECT id`, y ponerle tope significaría mentirle al frontend sobre
+   * cuántas filas matchean.
    */
   async todosLosIds(query: RawQuery): Promise<number[]> {
     const { where } = this.engine.build(query);
@@ -73,5 +85,57 @@ export class PagosService {
     });
 
     return filas.map((fila) => fila.id);
+  }
+
+  /**
+   * `sumar_pagos` — ROADMAP §3.9. Una agregación, sin traer filas.
+   *
+   * `elementos_seleccionados` sale del COUNT y no de `ids.length`: informa lo
+   * que realmente se sumó. Misma decisión que en clientes.
+   */
+  async sumar(ids: number[]): Promise<Record<string, unknown>> {
+    const resumen = await this.prisma.pago.aggregate({
+      where: { id: { in: ids } },
+      _sum: { credit: true },
+      _count: { _all: true },
+    });
+
+    const elementos_seleccionados = resumen._count._all;
+
+    return {
+      // `_sum` es `null` si no matcheó nada; `PaymentActionsState.result_suma`
+      // es un entero pelado y un null lo dejaría en 0 igual, pero sin avisar.
+      suma: resumen._sum.credit ?? 0,
+      elementos_seleccionados,
+      message: `Se sumaron ${elementos_seleccionados} pago(s).`,
+    };
+  }
+
+  /**
+   * `exportar_pagos_csv`. El `orderBy` es el del listado (`date desc, id
+   * desc`), así que el archivo sale en el mismo orden que la pantalla.
+   */
+  exportarCsv(ids: number[]): Readable {
+    const orden = [{ date: 'desc' as const }, { id: 'desc' as const }];
+
+    return csvComoStream(
+      COLUMNAS_CSV_PAGOS,
+      lotesOrdenados(
+        async () => {
+          const filas = await this.prisma.pago.findMany({
+            where: { id: { in: ids } },
+            select: { id: true },
+            orderBy: orden,
+          });
+          return filas.map((fila) => fila.id);
+        },
+        (lote) =>
+          this.prisma.pago.findMany({
+            where: { id: { in: lote } },
+            include: PAGO_INCLUDE,
+            orderBy: orden,
+          }),
+      ),
+    );
   }
 }

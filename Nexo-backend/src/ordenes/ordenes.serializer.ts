@@ -218,13 +218,16 @@ export function serializarOrdenDetalle(
 }
 
 /**
- * `"Cristian Quiroz"`. Devuelve `null` —no `""`— si no hay persona asignada:
+ * `"Cristian Quiroz"`. Exportada desde la Fase 9: la usan también el CSV y el
+ * PDF de órdenes, que tienen que escribir el MISMO nombre que la tabla.
+ *
+ * Devuelve `null` —no `""`— si no hay persona asignada:
  * `OrderDetailDTO.tecnico_str` es `Optional[str]`, así que el null pasa, y el
  * DTO de la tabla tiene `"Sin asignar"` como default… que Pydantic **solo**
  * aplica si la clave está ausente, no si vale `None`. Como igual es
  * `Optional[str]`, el null se acepta y se pinta vacío.
  */
-function nombreDePersona(
+export function nombreDePersona(
   persona: { nombre1: string; apellido1: string; apellido2: string | null } | null,
 ): string | null {
   if (!persona) return null;

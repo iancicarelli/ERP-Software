@@ -1,8 +1,12 @@
+import { Readable } from 'node:stream';
+
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 
 import {
+  csvComoStream,
   FilterEngine,
+  lotesOrdenados,
   mergeCountClauses,
   PaginationParams,
   RawQuery,
@@ -10,6 +14,7 @@ import {
 } from '../common';
 import { PrismaService } from '../prisma/prisma.service';
 import { sumaDeServiciosActivos } from '../servicios/monto-total';
+import { COLUMNAS_CSV_CLIENTES } from './clientes.csv';
 import { CLIENTE_FILTERS } from './clientes.filters';
 import { CLIENTE_INCLUDE, serializarCliente } from './clientes.serializer';
 import { ClienteWriteDto } from './dto/cliente.dto';
@@ -149,6 +154,69 @@ export class ClientesService {
   }
 
   /**
+   * `sumar_montos_deuda_action` — ROADMAP §3.9.
+   *
+   * Una sola consulta de agregación: `SUM(monto_total)`, `SUM(deuda)` y
+   * `COUNT(*)` sobre los ids seleccionados. No se traen las filas: sumar en
+   * Node 10.000 clientes para mostrar dos números sería traer 10.000 filas al
+   * pedo.
+   *
+   * ⚠️ **Suma sobre `selected_ids`, no sobre los filtros activos.** Es el
+   * contrato: el frontend manda ids y el usuario puede haber destildado alguno
+   * después de "seleccionar todo". Los ids que no existen (borrados por otra
+   * sesión entre la selección y el clic) simplemente no suman, y por eso
+   * `cantidad_clientes` sale del COUNT y no de `selected_ids.length`: informa
+   * lo que REALMENTE se sumó.
+   */
+  async sumarMontosYDeuda(ids: number[]): Promise<Record<string, unknown>> {
+    const resumen = await this.prisma.cliente.aggregate({
+      where: { id: { in: ids } },
+      _sum: { monto_total: true, deuda: true },
+      _count: { _all: true },
+    });
+
+    const cantidad_clientes = resumen._count._all;
+
+    return {
+      // `_sum` viene en `null` cuando no matcheó ninguna fila. El frontend
+      // declara estos tres como enteros pelados: un `null` los rompería.
+      suma_monto_total: resumen._sum.monto_total ?? 0,
+      suma_deuda: resumen._sum.deuda ?? 0,
+      cantidad_clientes,
+      message: mensajeDeSuma(cantidad_clientes, ids.length),
+    };
+  }
+
+  /**
+   * `exportar_clientes_csv` — el archivo que baja el usuario.
+   *
+   * Devuelve un stream y no un string: ver la cabecera de `common/bulk/csv.ts`.
+   * El `orderBy` es el MISMO del listado (`id desc`) para que el CSV salga en
+   * el orden de la pantalla.
+   */
+  exportarCsv(ids: number[]): Readable {
+    return csvComoStream(
+      COLUMNAS_CSV_CLIENTES,
+      lotesOrdenados(
+        async () => {
+          const filas = await this.prisma.cliente.findMany({
+            where: { id: { in: ids } },
+            select: { id: true },
+            orderBy: { id: 'desc' },
+          });
+          return filas.map((fila) => fila.id);
+        },
+        (lote) =>
+          this.prisma.cliente.findMany({
+            where: { id: { in: lote } },
+            include: CLIENTE_INCLUDE,
+            orderBy: { id: 'desc' },
+          }),
+      ),
+    );
+  }
+
+  /**
    * Filtros → `where` de Prisma. El `countrange` de `cantidad_direcciones` no
    * lo puede resolver el motor solo (Prisma no filtra por `_count`): sale como
    * descriptor y se traduce acá a un `GROUP BY … HAVING` que devuelve ids.
@@ -279,4 +347,19 @@ function camposDe(target: unknown): string[] {
   if (Array.isArray(target)) return target.map(String);
   if (typeof target === 'string') return [target];
   return [];
+}
+
+/**
+ * El texto que el diálogo muestra abajo de los dos números.
+ *
+ * Avisa cuando se sumaron menos clientes de los que se habían seleccionado:
+ * pasa si alguien borró un cliente entre la selección y el clic, y sin este
+ * aviso el usuario vería una suma más chica sin ninguna explicación.
+ */
+function mensajeDeSuma(sumados: number, seleccionados: number): string {
+  if (sumados === seleccionados) {
+    return `Se sumaron ${sumados} cliente(s) seleccionado(s).`;
+  }
+
+  return `Se sumaron ${sumados} de ${seleccionados} cliente(s): el resto ya no existe.`;
 }

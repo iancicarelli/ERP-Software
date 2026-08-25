@@ -2,6 +2,7 @@
  * Capa de compatibilidad DRF (Fase 2). Todo lo que los módulos de entidad
  * necesitan para cumplir el contrato del frontend sin repetir código.
  */
+export * from './bulk';
 export * from './errors/drf-exception.filter';
 export * from './fechas';
 export * from './errors/drf-validation.exception';
